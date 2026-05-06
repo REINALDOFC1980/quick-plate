@@ -64,11 +64,13 @@ function MenuPage() {
       </header>
 
       {/* Category bar */}
-      <div className="mx-auto max-w-lg">
-        <CategoryBar
-          activeCategory={activeCategory}
-          onCategoryClick={handleCategoryClick}
-        />
+      <div className="sticky top-0 z-30">
+        <div className="mx-auto max-w-lg">
+          <CategoryBar
+            activeCategory={activeCategory}
+            onCategoryClick={handleCategoryClick}
+          />
+        </div>
       </div>
 
       {/* Menu sections */}
