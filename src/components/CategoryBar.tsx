@@ -17,7 +17,7 @@ export function CategoryBar({ activeCategory, onCategoryClick }: CategoryBarProp
   );
 
   return (
-    <div className="sticky top-0 z-30 bg-card shadow-sm">
+    <div className="bg-card shadow-sm">
       <div
         ref={scrollRef}
         className="scrollbar-hide flex gap-2 overflow-x-auto px-4 py-3"
