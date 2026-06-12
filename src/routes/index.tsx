@@ -1,114 +1,239 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useCallback, useRef, useEffect } from "react";
-import { categories, products, type Product } from "@/lib/menu-data";
-import { CategoryBar } from "@/components/CategoryBar";
-import { ProductCard } from "@/components/ProductCard";
-import { ProductModal } from "@/components/ProductModal";
-import { CartBar } from "@/components/CartBar";
+import { useEffect, useMemo, useState } from "react";
+import { PdvHeader } from "@/components/pdv/PdvHeader";
+import { CodigoBarrasInput } from "@/components/pdv/CodigoBarrasInput";
+import { GradeItens } from "@/components/pdv/GradeItens";
+import { TotaisVenda } from "@/components/pdv/TotaisVenda";
+import { PainelAtalhos, type AtalhoAcao } from "@/components/pdv/PainelAtalhos";
+import { PdvRodape } from "@/components/pdv/PdvRodape";
+import { ModalPesquisaProduto } from "@/components/pdv/ModalPesquisaProduto";
+import { ModalNumerico } from "@/components/pdv/ModalNumerico";
+import { ModalEstoque } from "@/components/pdv/ModalEstoque";
+import { ModalFinalizarVenda } from "@/components/pdv/ModalFinalizarVenda";
+import { ModalComprovante } from "@/components/pdv/ModalComprovante";
+import {
+  pdvStore,
+  usePdv,
+  calcularTotais,
+  type FormaPagamento,
+  type VendaFinalizada,
+} from "@/lib/pdv-store";
+import { CheckCircle2 } from "lucide-react";
 
 export const Route = createFileRoute("/")({
-  component: MenuPage,
+  component: PdvPage,
   head: () => ({
     meta: [
-      { title: "Sabor da Casa | Cardápio Digital" },
-      { name: "description", content: "Peça seus pratos favoritos online com praticidade" },
+      { title: "PDV — Mercadinho Bom Preço" },
+      { name: "description", content: "Sistema de ponto de venda para mercadinho de bairro" },
     ],
   }),
 });
 
-function MenuPage() {
-  const [activeCategory, setActiveCategory] = useState(categories[0].id);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+type ModalKey =
+  | null | "pesquisar" | "alterarQtd" | "desconto" | "sangria"
+  | "suprimento" | "estoque" | "finalizar" | "comprovante";
 
-  const handleCategoryClick = useCallback((id: string) => {
-    setActiveCategory(id);
-    const el = sectionRefs.current[id];
-    if (el) {
-      const offset = 60;
-      const top = el.getBoundingClientRect().top + window.scrollY - offset;
-      window.scrollTo({ top, behavior: "smooth" });
-    }
-  }, []);
+function PdvPage() {
+  const state = usePdv();
+  const [modal, setModal] = useState<ModalKey>(null);
+  const [ultimaVenda, setUltimaVenda] = useState<VendaFinalizada | null>(null);
+  const [itemSelecionado, setItemSelecionado] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
-  // Intersection observer for active category highlight
+  const totais = useMemo(
+    () => calcularTotais(state.vendaAtual.itens, state.vendaAtual.desconto),
+    [state.vendaAtual],
+  );
+
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setActiveCategory(entry.target.id);
-          }
+    const ultimo = state.vendaAtual.itens[state.vendaAtual.itens.length - 1];
+    if (ultimo) setItemSelecionado(ultimo.codigo);
+  }, [state.vendaAtual.itens.length]);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 1800);
+  }
+
+  function handleAtalho(a: AtalhoAcao) {
+    switch (a) {
+      case "pesquisar": setModal("pesquisar"); break;
+      case "alterarQtd":
+        if (itemSelecionado) setModal("alterarQtd");
+        else showToast("Selecione um item primeiro");
+        break;
+      case "desconto": setModal("desconto"); break;
+      case "remover":
+        if (itemSelecionado) {
+          pdvStore.removerItem(itemSelecionado);
+          setItemSelecionado(null);
         }
-      },
-      { rootMargin: "-80px 0px -70% 0px", threshold: 0 }
-    );
+        break;
+      case "cancelar":
+        if (state.vendaAtual.itens.length && confirm("Cancelar venda atual?")) {
+          pdvStore.cancelarVenda();
+        }
+        break;
+      case "sangria": setModal("sangria"); break;
+      case "suprimento": setModal("suprimento"); break;
+      case "estoque": setModal("estoque"); break;
+      case "reimprimir":
+        if (ultimaVenda) setModal("comprovante");
+        else showToast("Nenhuma venda recente");
+        break;
+      case "fechar":
+        if (confirm("Fechar o caixa?")) {
+          pdvStore.fecharCaixa();
+          showToast("Caixa fechado");
+        }
+        break;
+    }
+  }
 
-    Object.values(sectionRefs.current).forEach((el) => {
-      if (el) observer.observe(el);
-    });
+  // Atalhos de teclado
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "F2") { e.preventDefault(); handleAtalho("pesquisar"); }
+      else if (e.key === "F3") { e.preventDefault(); handleAtalho("alterarQtd"); }
+      else if (e.key === "F4") { e.preventDefault(); handleAtalho("desconto"); }
+      else if (e.key === "F5") { e.preventDefault(); handleAtalho("sangria"); }
+      else if (e.key === "F6") { e.preventDefault(); handleAtalho("suprimento"); }
+      else if (e.key === "F7") { e.preventDefault(); handleAtalho("estoque"); }
+      else if (e.key === "F8") {
+        e.preventDefault();
+        if (state.vendaAtual.itens.length) setModal("finalizar");
+      }
+      else if (e.key === "F9") { e.preventDefault(); handleAtalho("reimprimir"); }
+      else if (e.key === "F10") { e.preventDefault(); handleAtalho("fechar"); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
-    return () => observer.disconnect();
-  }, []);
+  function finalizar(forma: FormaPagamento, recebido?: number) {
+    const venda = pdvStore.finalizarVenda(forma, recebido);
+    setUltimaVenda(venda);
+    setModal("comprovante");
+  }
+
+  const itemSel = state.vendaAtual.itens.find((i) => i.codigo === itemSelecionado);
 
   return (
-    <div className="min-h-screen bg-background pb-24">
-      {/* Header */}
-      <header className="bg-primary px-4 pb-4 pt-6">
-        <div className="mx-auto max-w-lg">
-          <h1 className="text-2xl font-bold text-primary-foreground">🍴 Sabor da Casa</h1>
-          <p className="mt-1 text-sm text-primary-foreground/80">
-            O melhor da culinária brasileira
-          </p>
-        </div>
-      </header>
+    <div className="flex h-screen flex-col bg-background text-foreground print:hidden">
+      <PdvHeader
+        mercado={state.mercado}
+        operador={state.operador}
+        caixaAberto={state.caixa.aberto}
+      />
 
-      {/* Category bar */}
-      <div className="sticky top-0 z-30">
-        <div className="mx-auto max-w-lg">
-          <CategoryBar
-            activeCategory={activeCategory}
-            onCategoryClick={handleCategoryClick}
+      <main className="grid flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-10">
+        {/* ESQUERDA */}
+        <section className="flex flex-col gap-4 lg:col-span-7">
+          <CodigoBarrasInput onBipar={(c) => pdvStore.bipar(c)} />
+          <GradeItens
+            itens={state.vendaAtual.itens}
+            onAlterarQtd={(c, q) => pdvStore.alterarQtd(c, q)}
+            onRemover={(c) => pdvStore.removerItem(c)}
           />
-        </div>
-      </div>
+          <TotaisVenda
+            subtotal={totais.subtotal}
+            desconto={totais.desconto}
+            total={totais.total}
+          />
+        </section>
 
-      {/* Menu sections */}
-      <main className="mx-auto max-w-lg px-4 pt-4">
-        {categories.map((cat) => {
-          const catProducts = products.filter((p) => p.category === cat.id);
-          return (
-            <div
-              key={cat.id}
-              id={cat.id}
-              ref={(el) => { sectionRefs.current[cat.id] = el; }}
-            >
-              <h2 className="mb-3 mt-6 text-lg font-bold text-foreground">
-                {cat.icon} {cat.name}
-              </h2>
-              <div className="space-y-3">
-                {catProducts.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    onSelect={setSelectedProduct}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
+        {/* DIREITA */}
+        <aside className="flex flex-col gap-4 lg:col-span-3" data-keep-focus>
+          <PainelAtalhos onAction={handleAtalho} />
+          <button
+            disabled={!state.vendaAtual.itens.length}
+            onClick={() => setModal("finalizar")}
+            className="flex h-20 items-center justify-center gap-3 rounded-2xl bg-primary text-lg font-black uppercase tracking-wider text-primary-foreground shadow-lg transition-all hover:bg-primary/90 active:scale-[0.98] disabled:opacity-40"
+          >
+            <CheckCircle2 className="h-6 w-6" />
+            Finalizar Venda
+            <span className="rounded bg-primary-foreground/20 px-2 py-0.5 text-xs">
+              F8
+            </span>
+          </button>
+        </aside>
       </main>
 
-      {/* Cart bar */}
-      <CartBar />
+      <PdvRodape
+        qtdItens={totais.qtdItens}
+        qtdProdutos={totais.qtdProdutos}
+        total={totais.total}
+      />
 
-      {/* Product modal */}
-      {selectedProduct && (
-        <ProductModal
-          product={selectedProduct}
-          onClose={() => setSelectedProduct(null)}
-        />
+      {/* Modais */}
+      <ModalPesquisaProduto
+        open={modal === "pesquisar"}
+        onOpenChange={(o) => setModal(o ? "pesquisar" : null)}
+        produtos={state.produtos}
+        onSelecionar={(c) => pdvStore.adicionarProduto(c, 1)}
+      />
+      <ModalNumerico
+        open={modal === "alterarQtd"}
+        onOpenChange={(o) => setModal(o ? "alterarQtd" : null)}
+        titulo={`Alterar Qtd — ${itemSel?.descricao ?? ""}`}
+        label="Nova quantidade"
+        permiteDecimal={false}
+        inicial={String(itemSel?.quantidade ?? "")}
+        onConfirmar={(v) => itemSel && pdvStore.alterarQtd(itemSel.codigo, v)}
+      />
+      <ModalNumerico
+        open={modal === "desconto"}
+        onOpenChange={(o) => setModal(o ? "desconto" : null)}
+        titulo="Aplicar Desconto"
+        label="Valor do desconto (R$)"
+        inicial={String(state.vendaAtual.desconto || "")}
+        onConfirmar={(v) => pdvStore.aplicarDesconto(v)}
+      />
+      <ModalNumerico
+        open={modal === "sangria"}
+        onOpenChange={(o) => setModal(o ? "sangria" : null)}
+        titulo="Sangria (retirada de caixa)"
+        label="Valor"
+        motivoObrigatorio
+        onConfirmar={(v) => {
+          pdvStore.sangria(v, "Sangria");
+          showToast("Sangria registrada");
+        }}
+      />
+      <ModalNumerico
+        open={modal === "suprimento"}
+        onOpenChange={(o) => setModal(o ? "suprimento" : null)}
+        titulo="Suprimento (entrada de caixa)"
+        label="Valor"
+        motivoObrigatorio
+        onConfirmar={(v) => {
+          pdvStore.suprimento(v, "Suprimento");
+          showToast("Suprimento registrado");
+        }}
+      />
+      <ModalEstoque
+        open={modal === "estoque"}
+        onOpenChange={(o) => setModal(o ? "estoque" : null)}
+        produtos={state.produtos}
+      />
+      <ModalFinalizarVenda
+        open={modal === "finalizar"}
+        onOpenChange={(o) => setModal(o ? "finalizar" : null)}
+        total={totais.total}
+        onConfirmar={finalizar}
+      />
+      <ModalComprovante
+        open={modal === "comprovante"}
+        onClose={() => setModal(null)}
+        venda={ultimaVenda}
+        mercado={state.mercado}
+      />
+
+      {toast && (
+        <div className="pointer-events-none fixed bottom-20 left-1/2 -translate-x-1/2 rounded-full bg-foreground px-5 py-2.5 text-sm font-semibold text-background shadow-lg">
+          {toast}
+        </div>
       )}
     </div>
   );
